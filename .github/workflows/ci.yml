@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.7"
+          cache: true
+
+      # internal/probe binds directly to libavformat/libavcodec/libavutil
+      # via cgo (see docs/adr/0002), and internal/transcode / abr-bench
+      # shell out to the ffmpeg CLI (see docs/adr/0001) — both are
+      # required to build and to run the full test suite, not just the
+      # ffmpeg binary alone.
+      - name: Install ffmpeg + libav dev headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libavformat-dev libavcodec-dev libavutil-dev
+
+      - name: gofmt
+        run: |
+          fmt_out="$(gofmt -l .)"
+          if [ -n "$fmt_out" ]; then
+            echo "The following files are not gofmt-formatted:"
+            echo "$fmt_out"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: build
+        run: go build ./...
+
+      - name: test (with -race)
+        run: go test -race ./...
+
+      # Short smoke run, not a real fuzzing session — just confirms
+      # FuzzParse (internal/scte35) still passes its seed corpus and a
+      # brief mutation burst on every push, catching a regression fast.
+      # Real fuzzing time is a local/periodic activity, not CI-per-push.
+      - name: fuzz smoke test
+        run: go test ./internal/scte35/... -run '^$' -fuzz FuzzParse -fuzztime 15s
+
+      - name: staticcheck
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@2026.2.1
+          staticcheck ./...
+
+      - name: golangci-lint
+        run: |
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1
+          golangci-lint run ./...
+
+      # Catches known CVEs in the Go standard library / toolchain version
+      # itself, not just imported modules (this project has none) — only
+      # flags a vulnerability if this code's actual call graph reaches it.
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
+          govulncheck ./...
+
+  docker-scan:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        image:
+          - dockerfile: Dockerfile.playground-api
+            tag: stitchpoint-playground-api:ci
+          - dockerfile: Dockerfile.vastfixture
+            tag: stitchpoint-vastfixture:ci
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: build image
+        run: docker build -f ${{ matrix.image.dockerfile }} -t ${{ matrix.image.tag }} .
+
+      # govulncheck/gosec see Go source; this is the same idea applied to
+      # the actual shipped artifact — OS package CVEs (in ffmpeg/libav*,
+      # for the playground-api image specifically, since vastfixture's
+      # distroless base has almost nothing left to scan) that no
+      # source-level Go tool can see. --ignore-unfixed skips CVEs with no
+      # available patch yet (failing CI on those would just be noise no
+      # action here can resolve); everything else at HIGH/CRITICAL fails
+      # the build, same bar govulncheck already holds Go stdlib to.
+      - name: scan image with Trivy
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ matrix.image.tag }}
+          severity: "CRITICAL,HIGH"
+          ignore-unfixed: true
+          exit-code: "1"

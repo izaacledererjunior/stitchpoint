@@ -1,0 +1,27 @@
+version: 2
+updates:
+  # Go toolchain/module updates. This project has zero third-party module
+  # dependencies (see go.mod), so in practice this watches the `go`
+  # directive itself — exactly the gap that let go.mod sit on 1.22.2 for
+  # months until govulncheck caught 39 stdlib CVEs from the stale
+  # toolchain. This is the structural fix for that: a PR opens
+  # automatically the next time a newer Go release exists, instead of
+  # relying on someone remembering to check.
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  # Covers both Dockerfile.playground-api and Dockerfile.vastfixture (both
+  # at repo root) — keeps their FROM base images (golang:*-bookworm,
+  # debian:bookworm-slim, gcr.io/distroless/static-debian12) current the
+  # same way gomod does for go.mod.
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
