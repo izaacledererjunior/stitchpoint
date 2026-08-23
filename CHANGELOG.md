@@ -2,7 +2,6 @@
 
 All notable changes to this project are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); see
-[progress.md](progress.md) for the full day-by-day build log and
 [docs/adr](docs/adr) for the reasoning behind individual decisions.
 
 ## [Unreleased]
@@ -36,13 +35,11 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); see
 
 ## Phase 1 — SCTE-35 parser
 Bit-level `splice_info_section` decoding (`splice_insert`, `time_signal`),
-including malformed/truncated input handling. See
-[progress.md](progress.md#phase-1--scte-35-parser).
+including malformed/truncated input handling.
 
 ## Phase 2 — VOD SSAI stitcher
 Manifest-level HLS splice at signaled ad breaks, plus a dynamic HTTP
-ad-insertion server (VAST → download → transcode → splice per session). See
-[progress.md](progress.md#phase-2--vod-ssai-stitcher).
+ad-insertion server (VAST → download → transcode → splice per session).
 
 ## Phase 3 — cgo/libavformat optimization
 Segment/keyframe boundary detection moved from shelling out to `ffprobe`

@@ -8,8 +8,8 @@ import (
 )
 
 // spliceInsertB64 and timeSignalB64 are real, independently-verified
-// SCTE-35 messages (cross-checked against Comcast's threefive decoder —
-// see progress.md): a splice_insert cue-out/duration pair and a
+// SCTE-35 messages (cross-checked against Comcast's threefive decoder):
+// a splice_insert cue-out/duration pair and a
 // time_signal PTS marker. timeSignalHex is derived from timeSignalB64
 // rather than hand-typed, so it can't drift from a value that's actually
 // been verified.

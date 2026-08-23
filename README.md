@@ -4,19 +4,20 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/izaacledererjunior/stitchpoint.svg)](https://pkg.go.dev/github.com/izaacledererjunior/stitchpoint)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-🌐 **Language:** English (this file) · [Português](README.pt-BR.md)
-
 A reference-implementation Server-Side Ad Insertion (SSAI) stitcher for VOD
 HLS streams. Built as a portfolio project to demonstrate hands-on
 understanding of SCTE-35 ad signaling and HLS manifest/segment stitching —
 the layer of ad tech below the client-side player/GAM/IMA SDK integration
 work, and the part that's genuinely hard to fake or learn from docs alone.
 
-> **Status:** Phase 1 (SCTE-35 parser) is done. Phase 2 (VOD SSAI stitcher)
-> is functionally complete, including a dynamic HTTP ad-insertion server —
-> the one open item is the visual proof-of-splice recording (see "Proof
-> artifact" below). See [progress.md](progress.md) for exact status and
-> what's left.
+> **Status: active development / beta.** Phases 1–4 (SCTE-35 parsing, VOD
+> stitching, the cgo/libavformat boundary-detection path, and live SSAI) are
+> all implemented and covered by unit/integration tests — see each phase's
+> section below for what that actually means. This is still a portfolio
+> reference implementation, not a finished or production-hardened product:
+> APIs, CLI flags, and test assets can change without notice, and the one
+> concretely open item is the visual proof-of-splice recording (see "Proof
+> artifact" below), which hasn't been captured yet.
 
 ## The problem
 
@@ -55,10 +56,10 @@ seams. To do that correctly, a stitcher has to:
 ```mermaid
 flowchart LR
     subgraph Go["Go orchestrator"]
-        A[HTTP API] --> B[Manifest fetch/parse]
-        B --> C[SCTE-35 cue parser]
-        C --> D[Splice planner]
+        A[HTTP API] --> B["Manifest fetch/parse<br/>(reads #EXT-X-CUE-OUT/CUE-IN directly)"]
+        B --> D[Splice planner]
         D --> E[Stitched manifest writer]
+        Z["SCTE-35 binary cue parser<br/>(scte35 subcommand, diagnostic — not<br/>on the splice pipeline's critical path)"]
     end
     subgraph FFmpeg["FFmpeg (subprocess)"]
         F[Keyframe / segment<br/>boundary detection]
@@ -212,7 +213,8 @@ reasonable way to develop or demo the dynamic path, and an earlier
 approach here — a locally-saved *captured* real VAST response used as a
 dev-only fallback — traded that problem for another: a captured
 response's `MediaFile` is a signed, time-limited CDN URL, and it *did*
-expire once during real Phase 4 testing (see progress.md).
+expire once during real Phase 4 testing (see "Validated against a real
+live channel" below).
 
 `cmd/vastfixture` (`internal/adfixture`) removes the real ad network from
 the picture entirely instead: it's a small, separate Go binary that
@@ -382,7 +384,7 @@ by fetching the actual served ad segment over HTTP (200, a real playable
 
 ## How to run it
 
-Requires Go 1.22+, `ffmpeg` on `PATH` (Phase 2), and, as of Phase 3,
+Requires Go 1.26+ (see `go.mod`), `ffmpeg` on `PATH` (Phase 2), and, as of Phase 3,
 `libavformat`/`libavcodec`/`libavutil` **development headers** plus a C
 compiler (`libavformat-dev libavcodec-dev libavutil-dev` on
 Debian/Ubuntu) — `internal/probe` binds directly to libavformat via cgo;
@@ -456,28 +458,6 @@ require the ad's duration to match the break exactly (`stitch.Options`'s
 that, and per this project's VOD architecture, the manifest is allowed to
 grow or shrink to fit rather than forcing an exact match.
 
-### DASH
-
-`dash-stitch` is `stitch`'s DASH equivalent — same `-ad`/`-vast` shape,
-same idea, genuinely different mechanism underneath: DASH splices by
-splitting the content's `Period` at the SCTE-35 break and inserting a new
-`Period` for the ad, not by rewriting a segment list (see
-`internal/dashsplice`'s package doc and ADR 0007 for why, and its scope:
-`SegmentTimeline`-based content, break timing from `Event/@presentationTime`,
-one cue spliced per call).
-
-```sh
-./bin/stitchpoint dash-stitch \
-  -content testdata/dash/content/content.mpd \
-  -ad testdata/dash/ad/ad.mpd \
-  -out /tmp/dash-stitched-out
-# spliced MPD: /tmp/dash-stitched-out/stitched.mpd
-# 3 periods total (1 ad period inserted)
-
-# Decodes clean start to finish, same verification stitch's own output gets:
-ffmpeg -v error -i /tmp/dash-stitched-out/stitched.mpd -f null -
-```
-
 ```sh
 # Run as a live dynamic-SSAI server instead of a one-shot batch command —
 # every request gets its own fresh ad decision (see "Dynamic SSAI server" above):
@@ -522,6 +502,28 @@ curl "http://localhost:8080/sessions/<id>/stitched.m3u8"
 # watch it: curl http://localhost:8080/live/stitched.m3u8
 ```
 
+### DASH
+
+`dash-stitch` is `stitch`'s DASH equivalent — same `-ad`/`-vast` shape,
+same idea, genuinely different mechanism underneath: DASH splices by
+splitting the content's `Period` at the SCTE-35 break and inserting a new
+`Period` for the ad, not by rewriting a segment list (see
+`internal/dashsplice`'s package doc and ADR 0007 for why, and its scope:
+`SegmentTimeline`-based content, break timing from `Event/@presentationTime`,
+one cue spliced per call).
+
+```sh
+./bin/stitchpoint dash-stitch \
+  -content testdata/dash/content/content.mpd \
+  -ad testdata/dash/ad/ad.mpd \
+  -out /tmp/dash-stitched-out
+# spliced MPD: /tmp/dash-stitched-out/stitched.mpd
+# 3 periods total (1 ad period inserted)
+
+# Decodes clean start to finish, same verification stitch's own output gets:
+ffmpeg -v error -i /tmp/dash-stitched-out/stitched.mpd -f null -
+```
+
 Run the test suite (table-driven, includes malformed/truncated input and
 the ad-duration-mismatch case):
 
@@ -562,7 +564,7 @@ pieces:
    and inserted as `#EXT-OATCLS-SCTE35` tags into `content.m3u8` at the
    30s/40s segment boundaries, timed to exactly bracket the 10s ad. Both
    cues were independently verified against Comcast's `threefive` decoder
-   before being committed (see `progress.md` for the verification output).
+   before being committed.
 
 To regenerate from scratch:
 
@@ -657,18 +659,33 @@ example decodes and verifies, not an invented payload. Used by
 `TestExtractEmsgCues_RealSegment` and by the `-segment` CLI example
 above.
 
+## Live demo
+
+**[stitchpoint.izaac.site](https://stitchpoint.izaac.site)** — an
+interactive, publicly hosted version of the pipeline (see
+[docs/playground-plan.md](docs/playground-plan.md)): upload a video, mark
+an ad break, and watch the real VAST fetch → download → transcode →
+splice pipeline run and produce a playable result in the browser. Backed
+by the `playground-api` service in this repo
+(`internal/playground`/`cmd/playground-api`) and the
+[`stitchpoint-playground`](https://github.com/izaacledererjunior/stitchpoint-playground-)
+frontend.
+
 ## Proof artifact
 
-![Ad splice playing cleanly through the break, in a real player](docs/media/proof-artifact.gif)
-
-`stitch.Splice` has been verified structurally (unit + integration tests)
+**Not yet captured — the one concretely open item in this project.** In
+the meantime, the "Live demo" above is a stronger, always-available
+substitute: it's the actual pipeline running end to end, not a recording
+of it. `stitch.Splice` has been verified structurally (unit + integration
+tests)
 and the stitched output decodes cleanly end-to-end under FFmpeg
 (`ffmpeg -v error -i stitched.m3u8 -f null -` exits 0 with the correct 60s
-total duration) — but neither check confirms a *visually* clean splice
-(no frame tear, no A/V desync at the boundary), which needs eyes on a
-real player, not a decoder exit code. The recording above is that: the
-CLI commands earlier in this section produce the exact directory played
-back here.
+total duration) — but neither check confirms a *visually* clean splice (no
+frame tear, no A/V desync at the boundary), which needs eyes on a real
+player, not a decoder exit code. The `stitch`/`serve` commands under "How to
+run it" already produce a playable output directory today; what's missing
+is recording that playback and embedding it here as
+`docs/media/proof-artifact.gif`.
 
 `-vast` has additionally been run against a real Google Ad Manager tag
 (my own GAM account). The result was a valid no-fill
@@ -689,9 +706,6 @@ against a real-world encode, not just assets this project generated
 itself. FFmpeg decoded the result cleanly end to end.
 
 ## What was learned
-
-*(To be filled in as Phase 1 and Phase 2 complete — this section is meant
-to capture real engineering takeaways, not restate the architecture.)*
 
 - Independently-encoded segments joined at a discontinuity carry unrelated
   internal timestamps even when codec/bitrate/resolution match exactly —
@@ -790,8 +804,10 @@ Deliberately deferred, not forgotten:
   this build's FFmpeg isn't compiled with `libvmaf`, and adding a quality
   metric is a meaningfully bigger feature than "does the encoder hit its
   target bitrate." A genuine follow-up, not bundled in for its own sake.
-- Phase 4: live SSAI (real-time, duration-matched ad breaks — meaningfully
-  harder than VOD, separate milestone).
+- ~~Phase 4: live SSAI~~ — **built**: see "Live SSAI (Phase 4)" above,
+  including real-channel validation. The remaining live-specific gaps
+  (pre-fetch, real ad-pod filling, per-viewer personalization) are their
+  own items above, not this one.
 - Decode `segmentation_descriptor` (currently `time_signal` cues carry PTS
   only; the descriptor is what tells you *why* — ad break start, provider
   placement opportunity, etc.).

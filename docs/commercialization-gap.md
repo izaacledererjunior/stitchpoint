@@ -5,7 +5,7 @@ explicitly scoped as a portfolio reference implementation (see
 `CLAUDE.md`'s Non-goals and README's "Non-goals"), not a
 production-revenue-ready system. This document exists to answer a
 different question than the rest of the repo's docs: not "what's left
-to finish the demo" (see `progress.md`, `docs/playground-plan.md`) but
+to finish the demo" (see `docs/playground-plan.md`) but
 "what would it actually take to run a real, revenue-generating channel
 on this." The two lists overlap in places but aren't the same — some
 items here (real ad-pod filling, per-viewer personalization) are already
@@ -27,7 +27,8 @@ the engineering" and "sells ad inventory."
   against real FFmpeg encodes/decodes end to end, both documented via
   ADR (0003 fail-open/exact-duration, 0007 DASH Period-split).
 - **Live SSAI mechanics** — fail-open design, correct discontinuity
-  placement, real-channel-validated (see progress.md's Phase 4 section).
+  placement, real-channel-validated (see the README's "Validated against
+  a real live channel").
 - **Engineering discipline itself** — test coverage, ADRs, real
   end-to-end verification over unit tests alone. This is a real asset
   for a commercialization effort, not something to rebuild.
@@ -54,7 +55,7 @@ the engineering" and "sells ad inventory."
 - **No real ad-server integration exercised end to end.** `internal/vast`
   is a real, spec-conformant VAST client (redirect-following, MediaFile
   selection), but a real fill through Google Ad Manager was explicitly
-  deferred (see `progress.md`). Every demo path uses the self-hosted
+  deferred (see the README's "Proof artifact"). Every demo path uses the self-hosted
   `cmd/vastfixture` — deterministic and useful for development, but zero
   evidence yet against a real ad exchange's actual response shapes,
   latency, or failure modes at any volume.

@@ -46,8 +46,8 @@ to cgo, matching the ADR 0001 consequence this was always expected to be.
 ## Rationale
 
 - **Fixes a real bug, not a hypothetical one.** The sub-second trailing
-  segment was observed in this project's own end-to-end testing (see
-  `progress.md`), not invented to justify the cgo work.
+  segment was observed in this project's own end-to-end testing, not
+  invented to justify the cgo work.
 - **`ffprobe`-via-subprocess-and-parse-JSON was the other option and was
   rejected.** It would have solved the immediate duration problem with
   zero new build complexity, but ADR 0001 specifically named this as the

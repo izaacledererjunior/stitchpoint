@@ -6,9 +6,10 @@ frontend (`stitchpoint-playground` — plain HTML/CSS/JS, no build step)
 both built and verified together against a real backend, in a real
 browser. **Milestone 3 (DASH) is done** — both Period-split/insert
 splicing (ADR 0007) and inband `emsg` signaling (ADR 0008), see its
-section below. **Milestone 2 (deployment) hasn't started**: the local
-Docker Compose stack is done and verified, but nothing is running on a
-real public host yet. This is a roadmap, not an ADR — it
+section below. **Milestone 2 (deployment) is done**: both services run on
+a real public host behind Caddy/TLS — see the live demo linked from the
+README ([stitchpoint.izaac.site](https://stitchpoint.izaac.site)) and
+[deploy/README.md](../deploy/README.md) for how. This is a roadmap, not an ADR — it
 records what's planned and why it's sequenced this way, so it can be
 picked back up without re-deriving context, and revised as reality
 (and priorities) change. Once a piece of this actually ships, its real
@@ -90,8 +91,8 @@ anything, not after.
 **Not done yet**: the "already-cued manifest upload" path isn't built as
 its own upload flow — the demo endpoint exercises the same underlying
 already-cued code path (`runCuedContentJob`), just against a fixed
-checked-in file rather than an arbitrary upload. Nothing is deployed
-publicly yet (Milestone 2).
+checked-in file rather than an arbitrary upload. (Public deployment is
+Milestone 2, done — see below.)
 
 ### New: ad-break injection for raw uploaded video
 
@@ -156,10 +157,13 @@ unchanged.
 
 ## Milestone 2 — Deployment
 
-**Target decided: AWS Lightsail** (a small instance running Docker), not
-Fly.io/a generic VPS as originally left open above — keeps this close to
-AWS-native adtech infrastructure, which is also the more relevant signal
-for the portfolio audience.
+**Done.** Ended up on a `t3.small` **AWS EC2** instance (free-tier
+credits) rather than the Lightsail plan originally sketched below — same
+AWS-native rationale, but EC2's free-tier credits made it the cheaper
+option once actually compared; see [deploy/README.md](../deploy/README.md)
+for the real setup (Caddy for automatic HTTPS, two domains — one for the
+API, one for the frontend — and a GitHub Actions pipeline that deploys on
+every push to `main` in both repos).
 
 **Local Docker Compose stack: done**, and it's deliberately the same
 artifacts the Lightsail deploy will use, not a separate local-only setup:
@@ -188,13 +192,12 @@ artifacts the Lightsail deploy will use, not a separate local-only setup:
       both through to real `hls.js` playback, against the actual
       containers and the actual Docker network, not a mocked stand-in.
 
-**Not done yet**: the actual Lightsail instance — this is local-only so
-far. `stitchpoint serve`/`live` aren't part of the compose stack yet
-either (the playground currently only exercises `playground-api`'s own
-splice path, not the standalone CLI server). Job concurrency limits are
-enforced by `internal/playground` itself (`Config.MaxConcurrentJobs`);
-nothing extra is enforced at the container/host level yet — worth
-revisiting once real Lightsail instance sizing is known.
+**Still not part of the deploy**: `stitchpoint serve`/`live` aren't in the
+compose stack (the playground only exercises `playground-api`'s own splice
+path, not the standalone CLI server). Job concurrency limits are enforced
+by `internal/playground` itself (`Config.MaxConcurrentJobs`); nothing
+extra is enforced at the container/host level yet — worth revisiting now
+that real `t3.small` instance sizing is known.
 
 ## Milestone 3 — DASH
 

@@ -7,7 +7,7 @@ Accepted.
 ## Context
 
 Every real VAST endpoint used against this project so far has caused a
-real friction point, both documented in progress.md and README:
+real friction point, documented in the README:
 
 1. **Real ad servers no-fill for reasons unrelated to stitching.** A real
    Google Ad Manager tag returned a valid `<VAST version="4.0"/>` no-fill
@@ -18,8 +18,8 @@ real friction point, both documented in progress.md and README:
 2. **A captured real response's creative URL expires.** The dev-only
    fallback (`-dev-fallback-vast`, a real captured VAST 4.0 response saved
    under `local/`) worked, but its `MediaFile` is a signed, time-limited
-   CDN link. It expired once during real Phase 4 live testing (see
-   progress.md's Phase 4 section) — the pipeline's fail-open design
+   CDN link. It expired once during real Phase 4 live testing (see the
+   README's "Validated against a real live channel") — the pipeline's fail-open design
    handled that correctly, but it's still a real dependency on something
    outside this project's control, and it can't be committed to the repo
    at all (the URL carries session-scoped tracking identifiers).
