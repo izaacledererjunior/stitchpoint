@@ -89,6 +89,36 @@ func TestServer_Healthz(t *testing.T) {
 	}
 }
 
+func TestServer_Root(t *testing.T) {
+	srv, err := New(Config{VASTURL: "http://example.invalid/vast", WorkDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("GET / status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	// GET /{$} must match only the exact root, not act as a catch-all —
+	// an actually-unknown path still 404s.
+	resp2, err := http.Get(ts.URL + "/this-route-does-not-exist")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp2.Body.Close()
+	if resp2.StatusCode != http.StatusNotFound {
+		t.Errorf("GET /this-route-does-not-exist status = %d, want %d (root handler must not shadow real 404s)", resp2.StatusCode, http.StatusNotFound)
+	}
+}
+
 func TestServer_Demo_EndToEnd(t *testing.T) {
 	vastSrv := newTestVASTServer(t)
 	defer vastSrv.Close()

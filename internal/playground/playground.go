@@ -195,6 +195,13 @@ func New(cfg Config) (*Server, error) {
 	}
 
 	s.mux = http.NewServeMux()
+	// {$} matches only the exact root path, not every unmatched route
+	// (a bare "GET /" pattern would act as a catch-all and turn a typo'd
+	// path into a 200 instead of a real 404) — this is a pure JSON API,
+	// there's no page here for the stitchpoint-playground frontend to
+	// serve at this URL yet, so a visitor landing on the bare domain
+	// gets a pointer to the real endpoints instead of a bare 404.
+	s.mux.HandleFunc("GET /{$}", handleRoot)
 	s.mux.HandleFunc("GET /healthz", httpserve.Healthz)
 	s.mux.Handle("POST /api/jobs", s.rateLimiter.Middleware(http.HandlerFunc(s.handleCreateJob)))
 	s.mux.HandleFunc("GET /api/jobs/{id}", s.handleGetJob)
@@ -319,6 +326,18 @@ func (s *Server) handleDemo(w http.ResponseWriter, _ *http.Request) {
 
 	w.Header().Set("Location", "/api/jobs/"+job.ID)
 	writeJSON(w, http.StatusAccepted, s.snapshot(job))
+}
+
+// handleRoot answers the bare domain for a visitor who opened the URL
+// directly rather than through the stitchpoint-playground frontend —
+// see its registration in New for why this exists at all.
+func handleRoot(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"name":    "stitchpoint playground API",
+		"repo":    "https://github.com/izaacledererjunior/stitchpoint",
+		"healthz": "/healthz",
+		"demo":    "POST /api/demo",
+	})
 }
 
 func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
