@@ -1,7 +1,16 @@
-.PHONY: build test race bench lint vet staticcheck vulncheck fuzz check tools clean
+.PHONY: build test race bench fmt lint vet staticcheck vulncheck fuzz check install-hooks clean
 
 build:
 	go build ./...
+
+# Matches the check .github/workflows/ci.yml's gofmt step runs.
+fmt:
+	@fmt_out="$$(gofmt -l .)"; \
+	if [ -n "$$fmt_out" ]; then \
+		echo "not gofmt-formatted:"; \
+		echo "$$fmt_out"; \
+		exit 1; \
+	fi
 
 test:
 	go test ./...
@@ -32,8 +41,16 @@ fuzz:
 
 # Everything CI runs, in one command — the same checks a PR is gated on,
 # runnable locally before pushing.
-check: vet build race staticcheck lint vulncheck fuzz
+check: fmt vet build race staticcheck lint vulncheck fuzz
 	@echo "all checks passed"
+
+# Points Git at .githooks (pre-commit runs `make check`, commit-msg
+# validates Conventional Commits) — a one-time opt-in per clone, since
+# core.hooksPath is a local git config, not something a commit can force
+# onto a collaborator's checkout.
+install-hooks:
+	git config core.hooksPath .githooks
+	@echo "git hooks installed (.githooks) — 'git commit --no-verify' skips them for one commit"
 
 clean:
 	go clean ./...

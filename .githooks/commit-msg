@@ -1,0 +1,21 @@
+#!/bin/sh
+# Enforces Conventional Commits (https://www.conventionalcommits.org) on
+# the subject line: type(optional-scope): description. See
+# .githooks/README.md to enable/disable.
+set -e
+
+msg_file="$1"
+subject="$(head -n1 "$msg_file")"
+
+pattern='^(feat|fix|chore|docs|ci|test|refactor|perf|build|revert)(\([a-zA-Z0-9_,.-]+\))?: .+'
+
+if ! printf '%s' "$subject" | grep -Eq "$pattern"; then
+	echo "commit-msg: subject line doesn't follow Conventional Commits:"
+	echo "  \"$subject\""
+	echo
+	echo "expected: type(scope): description, e.g. \"feat(server): add rate limiting\""
+	echo "valid types: feat fix chore docs ci test refactor perf build revert"
+	echo
+	echo "(git commit --no-verify skips this check for one commit)"
+	exit 1
+fi
