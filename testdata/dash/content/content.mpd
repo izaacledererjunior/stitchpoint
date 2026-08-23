@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="urn:mpeg:dash:profile:isoff-live:2011" minBufferTime="PT20.0S" type="static" mediaPresentationDuration="PT1M0.0S">
+  <Period id="0" start="PT0.0S" duration="">
+    <EventStream timescale="1" schemeIdUri="urn:scte:scte35:2013:xml">
+      <Event presentationTime="20" duration="10">
+        <scte35:SpliceInfoSection protocolVersion="0">
+          <scte35:TimeSignal><scte35:SpliceTime ptsTime="0"/></scte35:TimeSignal>
+        </scte35:SpliceInfoSection>
+      </Event>
+    </EventStream>
+    <AdaptationSet mimeType="" contentType="video" lang="">
+      <Representation id="0" bandwidth="400000" width="640" height="360" codecs="avc1.4d401e" frameRate="">
+        <SegmentTemplate media="chunk-stream$RepresentationID$-$Number%05d$.m4s" initialization="init-stream$RepresentationID$.m4s" timescale="15360" duration="0" startNumber="1" presentationTimeOffset="0">
+          <SegmentTimeline>
+            <S t="0" d="153600" r="5"></S>
+          </SegmentTimeline>
+        </SegmentTemplate>
+      </Representation>
+    </AdaptationSet>
+  </Period>
+</MPD>

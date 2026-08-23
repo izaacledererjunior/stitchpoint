@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Real-world SCTE-35 EventStream example, copied verbatim from AWS
+  MediaTailor's own published DASH MPD documentation (the "splice
+  insert" example) — not self-authored, so internal/mpd's
+  scte35:2013:xml decoding is proven against an actual production DAI
+  system's real output, not just a fixture this project invented.
+  Source: https://docs.aws.amazon.com/mediatailor/latest/ug/manifest-dash-example.html
+-->
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011"
+     xmlns:scte35="http://www.scte.org/schemas/35/2016"
+     type="static"
+     mediaPresentationDuration="PT120S"
+     minBufferTime="PT2S"
+     profiles="urn:mpeg:dash:profile:isoff-live:2011">
+  <Period start="PT173402.036S" id="46041">
+    <EventStream timescale="90000" schemeIdUri="urn:scte:scte35:2013:xml">
+      <Event duration="9450000">
+        <scte35:SpliceInfoSection protocolVersion="0" ptsAdjustment="183265" tier="4095">
+          <scte35:SpliceInsert spliceEventId="99" spliceEventCancelIndicator="false" outOfNetworkIndicator="true" spliceImmediateFlag="false" uniqueProgramId="1" availNum="1" availsExpected="1">
+            <scte35:Program><scte35:SpliceTime ptsTime="7835775000"/></scte35:Program>
+            <scte35:BreakDuration autoReturn="true" duration="9450000"/>
+          </scte35:SpliceInsert>
+          <scte35:SegmentationDescriptor segmentationEventId="99" segmentationEventCancelIndicator="false" segmentationDuration="9450000">
+            <scte35:DeliveryRestrictions webDeliveryAllowedFlag="true" noRegionalBlackoutFlag="true" archiveAllowedFlag="true" deviceRestrictions="3"/>
+            <scte35:SegmentationUpid segmentationUpidType="8" segmentationUpidLength="0"/>
+            <scte35:SegmentationTypeID segmentationType="52"/>
+            <scte35:SegmentNum segmentNum="1"/>
+            <scte35:SegmentsExpected segmentsExpected="1"/>
+          </scte35:SegmentationDescriptor>
+        </scte35:SpliceInfoSection>
+      </Event>
+    </EventStream>
+    <AdaptationSet mimeType="video/mp4" segmentAlignment="true" subsegmentAlignment="true" startWithSAP="1" subsegmentStartsWithSAP="1" bitstreamSwitching="true">
+      <Representation id="1" width="960" height="540" frameRate="30000/1001" bandwidth="1000000" codecs="avc1.4D401F">
+        <SegmentTemplate timescale="30000" media="index_video_1_0_$Number$.mp4?m=1528475245" initialization="index_video_1_0_init.mp4?m=1528475245" startNumber="178444" presentationTimeOffset="10395907501">
+          <SegmentTimeline>
+            <S t="10395907501" d="60060" r="29"/>
+            <S t="10397709301" d="45045"/>
+          </SegmentTimeline>
+        </SegmentTemplate>
+      </Representation>
+    </AdaptationSet>
+    <AdaptationSet mimeType="audio/mp4" segmentAlignment="0" lang="eng">
+      <Representation id="2" bandwidth="96964" audioSamplingRate="48000" codecs="mp4a.40.2">
+        <SegmentTemplate timescale="48000" media="index_audio_2_0_$Number$.mp4?m=1528475245" initialization="index_audio_2_0_init.mp4?m=1528475245" startNumber="178444" presentationTimeOffset="16633452001">
+          <SegmentTimeline>
+            <S t="16633452289" d="96256" r="3"/>
+            <S t="16633837313" d="95232"/>
+          </SegmentTimeline>
+        </SegmentTemplate>
+      </Representation>
+    </AdaptationSet>
+  </Period>
+</MPD>
