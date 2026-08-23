@@ -16,11 +16,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: configure SSH
+        env:
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
         run: |
+          if [ -z "$EC2_SSH_KEY" ]; then echo "::error::secrets.EC2_SSH_KEY is empty or missing"; exit 1; fi
+          if [ -z "$EC2_HOST" ]; then echo "::error::secrets.EC2_HOST is empty or missing"; exit 1; fi
+          echo "EC2_SSH_KEY length: ${#EC2_SSH_KEY} chars, EC2_HOST: $EC2_HOST"
           mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_ed25519
+          echo "$EC2_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
+          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
 
       # Only playground-api and vastfixture: this repo's push doesn't
       # touch the frontend or Caddy, and docker compose's own build-cache
@@ -28,8 +34,10 @@ jobs:
       # naming them explicitly documents intent instead of relying on
       # that being true forever.
       - name: deploy
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
         run: |
-          ssh -i ~/.ssh/id_ed25519 ubuntu@${{ secrets.EC2_HOST }} '
+          ssh -i ~/.ssh/id_ed25519 "ubuntu@$EC2_HOST" '
             set -e
             cd ~/stitchpoint
             git fetch origin main
