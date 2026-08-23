@@ -1,0 +1,10 @@
+/bin/
+/dist/
+*.test
+*.out
+.idea/
+.DS_Store
+/local/
+/CLAUDE.md
+/.claude/
+progress.md
