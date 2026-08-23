@@ -1,0 +1,35 @@
+# Builds cmd/playground-api. Needs a full cgo build (internal/probe binds
+# libavformat/libavcodec/libavutil directly — see
+# docs/adr/0002-cgo-libavformat-for-boundary-detection.md) plus the
+# ffmpeg CLI at runtime (internal/transcode, ADR 0001) — the same two
+# dependencies the CI workflow installs, kept in sync with it.
+# Keep in sync with go.mod / .github/workflows/ci.yml.
+FROM golang:1.26.7-bookworm AS build
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential pkg-config \
+    libavformat-dev libavcodec-dev libavutil-dev \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+COPY go.mod ./
+COPY cmd ./cmd
+COPY internal ./internal
+RUN CGO_ENABLED=1 go build -o /out/playground-api ./cmd/playground-api
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --create-home --home-dir /home/playground --shell /usr/sbin/nologin playground
+WORKDIR /app
+COPY --from=build /out/playground-api ./playground-api
+COPY testdata/demo-content ./testdata/demo-content
+# job uploads/output — a named volume should be mounted here in
+# production so it survives container restarts; see docker-compose.yml
+# and docs/playground-plan.md's Milestone 2 storage note. Owned by, and
+# only writable by, the unprivileged user this process actually runs as
+# below — not world-writable.
+RUN mkdir -p /data && chown playground:playground /data && chmod 750 /data
+USER playground
+EXPOSE 8081
+ENTRYPOINT ["./playground-api"]
+CMD ["-addr", ":8081", "-work-dir", "/data"]

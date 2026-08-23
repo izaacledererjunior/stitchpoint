@@ -1,0 +1,28 @@
+# Builds cmd/vastfixture — see internal/adfixture's package doc for what
+# it is and why it's a separate image from playground-api: a different
+# role (ad server, not the SSAI/transcode pipeline), no cgo/ffmpeg
+# runtime dependency, so it doesn't need to share that image's much
+# larger base.
+# Keep in sync with go.mod / .github/workflows/ci.yml.
+FROM golang:1.26.7-bookworm AS build
+WORKDIR /src
+COPY go.mod ./
+COPY cmd/vastfixture ./cmd/vastfixture
+COPY internal/adfixture ./internal/adfixture
+COPY internal/httpserve ./internal/httpserve
+COPY internal/manifest ./internal/manifest
+RUN CGO_ENABLED=0 go build -o /out/vastfixture ./cmd/vastfixture
+
+# vastfixture has no cgo/ffmpeg dependency (see internal/adfixture's
+# package doc) — a statically-linked binary needs nothing from a distro
+# userland at all. distroless "static" ships only CA certs, tzdata, and
+# /etc/passwd (for the :nonroot tag's unprivileged UID) — no shell, no
+# package manager, nothing else in the image an exploited process could
+# use, which a full debian-slim base still has.
+FROM gcr.io/distroless/static-debian12:nonroot
+WORKDIR /app
+COPY --from=build /out/vastfixture ./vastfixture
+COPY testdata/demo-ad/advertising.mp4 ./testdata/demo-ad/advertising.mp4
+EXPOSE 9090
+ENTRYPOINT ["./vastfixture"]
+CMD ["-addr", ":9090"]
