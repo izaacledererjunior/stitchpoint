@@ -1,0 +1,7 @@
+// Copy to frontend-config.js (not committed — see .gitignore) and fill
+// in. Production override for stitchpoint-playground/config.js —
+// mounted over the checked-in local-dev default (see
+// deploy/docker-compose.yml's frontend service) so the frontend repo
+// itself never needs a deployment-specific edit. Must match DOMAIN
+// in .env.
+window.PLAYGROUND_API_BASE = "https://<api-domain>";

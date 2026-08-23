@@ -1,0 +1,26 @@
+{$DOMAIN} {
+	# Caddy provisions/renews the Let's Encrypt cert for this domain
+	# automatically — nothing else to configure for TLS.
+	reverse_proxy playground-api:8081
+
+	encode gzip
+
+	# Belt-and-suspenders on top of the app's own SecurityHeaders
+	# middleware (internal/httpserve) — cheap to also set at the edge.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	}
+}
+
+{$FRONTEND_DOMAIN} {
+	reverse_proxy frontend:80
+
+	encode gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+	}
+}

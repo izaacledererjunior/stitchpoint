@@ -1,0 +1,68 @@
+services:
+  vastfixture:
+    build:
+      context: ..
+      dockerfile: Dockerfile.vastfixture
+    restart: unless-stopped
+    # No `ports:` on purpose — only playground-api needs to reach this,
+    # over the private docker-compose network (http://vastfixture:9090),
+    # not the public internet. Fewer public listeners, smaller attack
+    # surface.
+    expose:
+      - "9090"
+
+  playground-api:
+    build:
+      context: ..
+      dockerfile: Dockerfile.playground-api
+    restart: unless-stopped
+    command:
+      - "-addr=:8081"
+      - "-work-dir=/data"
+      - "-vast=http://vastfixture:9090/vast"
+      - "-allowed-origin=${ALLOWED_ORIGIN:-*}"
+    volumes:
+      - playground-data:/data
+    expose:
+      - "8081"
+    depends_on:
+      - vastfixture
+
+  # The stitchpoint-playground frontend: static files (no build step —
+  # see that repo's own Dockerfile), assumed checked out as a sibling
+  # directory to this one on the host (../../stitchpoint-playground
+  # relative to this file, i.e. ~/stitchpoint-playground next to
+  # ~/stitchpoint) — same layout that repo's own docker-compose.yml
+  # already assumes for local dev.
+  frontend:
+    build:
+      context: ../../stitchpoint-playground
+    restart: unless-stopped
+    volumes:
+      # Overrides the image's checked-in local-dev config.js — see
+      # frontend-config.js's own comment.
+      - ./frontend-config.js:/usr/share/nginx/html/config.js:ro
+    expose:
+      - "80"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN=${DOMAIN:?set DOMAIN in .env, see .env.example}
+      - FRONTEND_DOMAIN=${FRONTEND_DOMAIN:?set FRONTEND_DOMAIN in .env, see .env.example}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - playground-api
+      - frontend
+
+volumes:
+  playground-data:
+  caddy-data:
+  caddy-config:
