@@ -8,9 +8,11 @@ FROM golang:1.26.7-bookworm AS build
 WORKDIR /src
 COPY go.mod ./
 COPY cmd/vastfixture ./cmd/vastfixture
-COPY internal/adfixture ./internal/adfixture
-COPY internal/httpserve ./internal/httpserve
-COPY internal/manifest ./internal/manifest
+# Whole internal/ tree, not individual packages: enumerating them here
+# already broke once (internal/httpserve importing internal/safego
+# wasn't in the list, and CI caught it as a Docker-only build failure —
+# go build ./... outside Docker has the whole tree, so it never sees this).
+COPY internal ./internal
 RUN CGO_ENABLED=0 go build -o /out/vastfixture ./cmd/vastfixture
 
 # vastfixture has no cgo/ffmpeg dependency (see internal/adfixture's
