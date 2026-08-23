@@ -4,7 +4,7 @@
 # ffmpeg CLI at runtime (internal/transcode, ADR 0001) — the same two
 # dependencies the CI workflow installs, kept in sync with it.
 # Keep in sync with go.mod / .github/workflows/ci.yml.
-FROM golang:1.26.7-bookworm AS build
+FROM golang:1.27.0-bookworm AS build
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential pkg-config \
     libavformat-dev libavcodec-dev libavutil-dev \

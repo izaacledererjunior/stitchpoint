@@ -4,7 +4,7 @@
 # runtime dependency, so it doesn't need to share that image's much
 # larger base.
 # Keep in sync with go.mod / .github/workflows/ci.yml.
-FROM golang:1.26.7-bookworm AS build
+FROM golang:1.27.0-bookworm AS build
 WORKDIR /src
 COPY go.mod ./
 COPY cmd/vastfixture ./cmd/vastfixture
