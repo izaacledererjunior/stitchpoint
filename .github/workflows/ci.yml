@@ -93,7 +93,7 @@ jobs:
       # action here can resolve); everything else at HIGH/CRITICAL fails
       # the build, same bar govulncheck already holds Go stdlib to.
       - name: scan image with Trivy
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ matrix.image.tag }}
           severity: "CRITICAL,HIGH"
