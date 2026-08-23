@@ -1,0 +1,39 @@
+name: Deploy
+
+# Runs after CI finishes on main — not on push directly — so a push that
+# fails lint/test/govulncheck never reaches the server. workflow_run only
+# fires for a workflow that actually completed; the conclusion is still
+# checked explicitly below since "completed" includes failure/cancelled.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    branches: [main]
+    types: [completed]
+
+jobs:
+  deploy:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
+
+      # Only playground-api and vastfixture: this repo's push doesn't
+      # touch the frontend or Caddy, and docker compose's own build-cache
+      # means rebuilding untouched services would be a no-op anyway — but
+      # naming them explicitly documents intent instead of relying on
+      # that being true forever.
+      - name: deploy
+        run: |
+          ssh -i ~/.ssh/id_ed25519 ubuntu@${{ secrets.EC2_HOST }} '
+            set -e
+            cd ~/stitchpoint
+            git fetch origin main
+            git reset --hard origin/main
+            cd deploy
+            docker compose up -d --build playground-api vastfixture
+          '
