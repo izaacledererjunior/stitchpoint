@@ -226,6 +226,61 @@ func TestEncodeHLS_MaxDurationTrims(t *testing.T) {
 	}
 }
 
+// TestEncodeHLS_LoopInputCoversFullDuration is a regression test for a
+// real deployment freeze: internal/live used to encode a short creative
+// once and repeat the resulting segments at the manifest level to cover
+// an underfilled break, which needed a fresh discontinuity at every
+// repeat and left byte-identical timestamps at each one — real players
+// stalled at the repeat boundary. LoopInput moves the repetition into
+// FFmpeg itself, so the encoded output should span the full MaxDuration
+// on its own, without any caller-side repetition needed.
+func TestEncodeHLS_LoopInputCoversFullDuration(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not found in PATH")
+	}
+
+	input := filepath.Join("..", "..", "testdata", "vastfixture", "creative.mp4")
+	if _, err := os.Stat(input); err != nil {
+		t.Skipf("test input not found: %v", err)
+	}
+
+	// Source is 6s; without LoopInput this could reach at most ~6s no
+	// matter what MaxDuration says, since MaxDuration only trims.
+	// Requesting 15s here — over two source lengths — is only reachable
+	// if the input is actually being looped.
+	params := Params{
+		Width: 320, Height: 180, VideoBitrateKbps: 200, AudioBitrateKbps: 64,
+		SegmentSeconds: 5, MaxDuration: 15 * time.Second, LoopInput: true,
+	}
+	out, err := EncodeHLS(input, t.TempDir(), params)
+	if err != nil {
+		t.Fatalf("EncodeHLS() error = %v", err)
+	}
+
+	total := out.TotalDuration()
+	if total < 14.5 || total > 15.5 {
+		t.Errorf("TotalDuration() = %v, want ~15s (LoopInput should have covered the full MaxDuration from the 6s source)", total)
+	}
+}
+
+func TestEncodeHLS_LoopInputRequiresMaxDuration(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not found in PATH")
+	}
+	input := filepath.Join("..", "..", "testdata", "vastfixture", "creative.mp4")
+	if _, err := os.Stat(input); err != nil {
+		t.Skipf("test input not found: %v", err)
+	}
+
+	params := Params{
+		Width: 320, Height: 180, VideoBitrateKbps: 200, AudioBitrateKbps: 64,
+		SegmentSeconds: 5, LoopInput: true, // no MaxDuration
+	}
+	if _, err := EncodeHLS(input, t.TempDir(), params); err == nil {
+		t.Fatal("EncodeHLS() error = nil, want an error (LoopInput with no MaxDuration would loop forever)")
+	}
+}
+
 // TestEncodeHLS_StartOffsetSeeks proves StartOffset actually seeks (the
 // output is shorter by roughly the offset) rather than just being an
 // accepted-but-ignored field — added for internal/contentprep, which

@@ -396,12 +396,24 @@ func (w *Watcher) resolveAd(gen int, target time.Duration) {
 	slog.Info("live: encoding creative...", "gen", gen, "targetDuration", target)
 	params := w.cfg.EncodeParams
 	params.MaxDuration = target
+	// LoopInput: FFmpeg loops the creative in-place during the encode
+	// itself when it's shorter than the break, producing one continuous,
+	// correctly-timestamped output spanning the whole target duration —
+	// see transcode.Params.LoopInput's doc for why this replaced
+	// repeating the (short) encoded result at the manifest level after
+	// the fact (real players stalling at the repeat boundary, confirmed
+	// against a real deployment).
+	params.LoopInput = true
 	ad, err := transcode.EncodeHLS(creativePath, breakDir, params)
 	if err != nil {
 		slog.Error("live: encoding creative FAILED", "gen", gen, "err", err)
 		return
 	}
 	segs := ad.Segments
+	// LoopInput above means this should no longer trigger in practice —
+	// FFmpeg already covers the full target duration — but stays as a
+	// defensive fallback (e.g. a rounding edge case in evenSegmentPlan)
+	// rather than trusting the encode to be exact.
 	if actual := time.Duration(ad.TotalDuration() * float64(time.Second)); actual < target {
 		slog.Warn("live: ad underfilled the break — covering the gap with filler", "gen", gen, "actual", actual, "target", target, "filler", fmt.Sprintf("%T", w.cfg.Filler))
 		segs = w.cfg.Filler.Fill(segs, actual, target)

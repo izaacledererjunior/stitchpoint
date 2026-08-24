@@ -31,11 +31,26 @@ type Params struct {
 	SegmentSeconds   float64
 
 	// MaxDuration, if positive, caps the encoded output (via FFmpeg's -t),
-	// trimming a longer creative down to fit. Zero means unbounded. It
-	// only trims; it can't pad an under-length creative (internal/live
-	// callers should compare TotalDuration() against MaxDuration to
-	// detect underfill and cover the gap themselves).
+	// trimming a longer creative down to fit. Zero means unbounded. On
+	// its own it only trims; see LoopInput for padding an under-length
+	// creative up to MaxDuration instead of leaving that to the caller.
 	MaxDuration time.Duration
+
+	// LoopInput, if true, loops inputPath indefinitely (FFmpeg's
+	// -stream_loop) before encoding, so a creative shorter than
+	// MaxDuration still produces one continuous, correctly-timestamped
+	// output spanning the full duration — instead of the caller
+	// repeating the (short) encoded result at the manifest/segment level
+	// after the fact. Repeating already-encoded segments needs a fresh
+	// #EXT-X-DISCONTINUITY at every loop boundary and repeats
+	// byte-identical internal timestamps at each one; real players can
+	// stall on that (confirmed against a real deployment — internal/live
+	// used to do exactly this via LoopFiller). Looping before the encode
+	// avoids the problem entirely: FFmpeg produces genuinely continuous
+	// PTS across the whole output, the same as encoding one real
+	// long-form asset. Requires MaxDuration > 0 — otherwise there's
+	// nothing to bound an indefinite loop.
+	LoopInput bool
 
 	// StartOffset, if positive, seeks this far into inputPath before
 	// encoding (via FFmpeg's -ss). Used by internal/contentprep to encode
@@ -94,6 +109,10 @@ func EncodeHLS(inputPath, outDir string, params Params) (*manifest.Playlist, err
 		return nil, err
 	}
 
+	if params.LoopInput && params.MaxDuration <= 0 {
+		return nil, fmt.Errorf("transcode: LoopInput requires a positive MaxDuration")
+	}
+
 	fullDuration, err := probe.Duration(inputPath)
 	if err != nil {
 		return nil, fmt.Errorf("transcode: probing input duration: %w", err)
@@ -101,9 +120,17 @@ func EncodeHLS(inputPath, outDir string, params Params) (*manifest.Playlist, err
 	if params.StartOffset >= fullDuration {
 		return nil, fmt.Errorf("transcode: StartOffset %v is at or past input duration %v", params.StartOffset, fullDuration)
 	}
-	duration := fullDuration - params.StartOffset
-	if params.MaxDuration > 0 && duration > params.MaxDuration {
+	var duration time.Duration
+	if params.LoopInput {
+		// The looped output's real duration is exactly MaxDuration
+		// regardless of the source's own (shorter) length — segment
+		// planning has to target that, not the source's fullDuration.
 		duration = params.MaxDuration
+	} else {
+		duration = fullDuration - params.StartOffset
+		if params.MaxDuration > 0 && duration > params.MaxDuration {
+			duration = params.MaxDuration
+		}
 	}
 	segmentSeconds, keyframeTimes := evenSegmentPlan(duration, params.SegmentSeconds)
 
@@ -115,6 +142,13 @@ func EncodeHLS(inputPath, outDir string, params Params) (*manifest.Playlist, err
 		// -ss before -i: fast, keyframe-granular seeking — good enough
 		// since break boundaries only need the nearest keyframe.
 		args = append(args, "-ss", fmt.Sprintf("%g", params.StartOffset.Seconds()))
+	}
+	if params.LoopInput {
+		// -stream_loop before -i: FFmpeg restarts the input stream
+		// in-place as part of one continuous encode, producing
+		// monotonically increasing output timestamps across every loop —
+		// not a manifest-level trick, a genuinely continuous re-encode.
+		args = append(args, "-stream_loop", "-1")
 	}
 	args = append(args, "-i", inputPath)
 	if params.MaxDuration > 0 {
