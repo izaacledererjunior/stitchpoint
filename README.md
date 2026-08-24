@@ -56,7 +56,7 @@ seams. To do that correctly, a stitcher has to:
 ```mermaid
 flowchart LR
     subgraph Go["Go orchestrator"]
-        A[HTTP API] --> B["Manifest fetch/parse<br/>(reads #EXT-X-CUE-OUT/CUE-IN directly)"]
+        A[HTTP API] --> B["Manifest fetch/parse<br/>(reads EXT-X-CUE-OUT/CUE-IN directly)"]
         B --> D[Splice planner]
         D --> E[Stitched manifest writer]
         Z["SCTE-35 binary cue parser<br/>(scte35 subcommand, diagnostic — not<br/>on the splice pipeline's critical path)"]
@@ -315,14 +315,14 @@ sequenceDiagram
     loop every PollInterval
         Poller->>Upstream: GET playlist
         Upstream-->>Poller: new segments (if any)
-        alt segment carries #EXT-X-CUE-OUT
+        alt segment carries EXT-X-CUE-OUT
             Poller->>Poller: start break, forward original content (fail open)
             Poller->>VAST: Fetch(vastURL) [async, doesn't block polling]
             VAST-->>Poller: ad (or dev fallback on no-fill)
             Poller->>FFmpeg: encode, MaxDuration = signaled break length
         else ad became ready this tick
             Poller->>Poller: splice ad segment(s) in, mark discontinuity
-        else segment carries #EXT-X-CUE-IN
+        else segment carries EXT-X-CUE-IN
             Poller->>Poller: resume passthrough, end break
         end
     end
