@@ -1,6 +1,7 @@
 package live
 
 import (
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -38,6 +39,19 @@ func (LoopFiller) Fill(segs []manifest.Segment, actual, target time.Duration) []
 		// Each repeat restarts the creative's PTS at 0, so it needs its
 		// own discontinuity marker or players stall at the loop boundary.
 		loop[0].Discontinuity = true
+		// Every repeat otherwise has the byte-identical URI (same file,
+		// looped) — a URL fragment makes each one a distinct reference
+		// for the player's own segment bookkeeping without touching what
+		// actually gets requested over the wire (fragments are stripped
+		// client-side before the HTTP request is made, so the server
+		// still resolves the same real file; see AdSegmentPath). Without
+		// this, a player that tracks segments by URI can't tell one
+		// repeat from the next across playlist reloads and stalls at the
+		// boundary — the exact failure this loop's own Discontinuity
+		// line above was trying to prevent, just one layer up.
+		for j := range loop {
+			loop[j].URI = fmt.Sprintf("%s#loop=%d.%d", loop[j].URI, i+1, j)
+		}
 		out = append(out, loop...)
 		total += actual
 	}

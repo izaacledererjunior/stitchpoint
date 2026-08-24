@@ -93,6 +93,24 @@ func TestLoopFiller_Fill_CapsRepeats(t *testing.T) {
 	}
 }
 
+// TestLoopFiller_Fill_UniqueURIsPerRepeat is a regression test: a player
+// that tracks segments by URI (Shaka Player included — confirmed against
+// a real deployment, ad playback stalling right at a loop boundary) can't
+// distinguish one repeat of the same creative from the next if every
+// repeat reuses the exact same URI. Each repeat must get a distinct
+// reference even though the underlying file (and the real HTTP request
+// once a client strips the fragment) is the same.
+func TestLoopFiller_Fill_UniqueURIsPerRepeat(t *testing.T) {
+	out := LoopFiller{}.Fill(segs(6), 6*time.Second, 20*time.Second)
+	seen := make(map[string]bool, len(out))
+	for i, s := range out {
+		if seen[s.URI] {
+			t.Fatalf("out[%d]: duplicate URI %q — a player tracking segments by URI can't tell repeats apart", i, s.URI)
+		}
+		seen[s.URI] = true
+	}
+}
+
 func TestLoopFiller_Fill_DoesNotMutateInput(t *testing.T) {
 	in := segs(6)
 	inCopy := append([]manifest.Segment(nil), in...)
