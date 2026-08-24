@@ -212,6 +212,48 @@ func TestLive_MaxConcurrentLive(t *testing.T) {
 	}
 }
 
+// TestLive_MaxConcurrentLive_StoppedSlotReusable is a regression test: the
+// concurrency check must count only running sessions. stopLiveSession
+// deliberately leaves the stopped entry in s.liveSessions (so a client
+// asking later still sees "stopped" — see its doc comment), so counting
+// every map entry instead of just LiveStatusRunning ones would make this
+// a lifetime-sessions-ever-created cap, permanently refusing new sessions
+// in production once that many had ever been created, even with zero
+// actually running.
+func TestLive_MaxConcurrentLive_StoppedSlotReusable(t *testing.T) {
+	allowLocalUpstream(t)
+	up1 := newStaticUpstream(t, []string{"seg_000.ts"})
+	defer up1.Close()
+	up2 := newStaticUpstream(t, []string{"seg_000.ts"})
+	defer up2.Close()
+	vastSrv := newTestVASTServer(t)
+	defer vastSrv.Close()
+
+	srv, err := New(Config{VASTURL: vastSrv.URL + "/vast", WorkDir: t.TempDir(), MaxConcurrentLive: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	first := postLive(t, ts, up1.URL+"/live.m3u8")
+
+	req, err := http.NewRequest(http.MethodDelete, ts.URL+"/api/live/"+first.ID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+
+	// The first slot is stopped, not removed — a second session must
+	// still be allowed to start, since only one is actually running.
+	postLive(t, ts, up2.URL+"/live.m3u8")
+}
+
 func TestLive_GetUnknown(t *testing.T) {
 	vastSrv := newTestVASTServer(t)
 	defer vastSrv.Close()

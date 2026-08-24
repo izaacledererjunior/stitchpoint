@@ -74,7 +74,19 @@ func (s *Server) handleCreateLive(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.liveMu.Lock()
-	if len(s.liveSessions) >= s.cfg.MaxConcurrentLive {
+	// Counts only LiveStatusRunning: stopped sessions stay in
+	// s.liveSessions indefinitely (see stopLiveSession's doc — a client
+	// asking later still sees "stopped"), so counting every entry here
+	// would make this a lifetime-sessions-ever-created cap instead of a
+	// concurrency cap, permanently wedging new sessions once that many
+	// have ever been created.
+	running := 0
+	for _, sess := range s.liveSessions {
+		if sess.Status == LiveStatusRunning {
+			running++
+		}
+	}
+	if running >= s.cfg.MaxConcurrentLive {
 		s.liveMu.Unlock()
 		http.Error(w, fmt.Sprintf("too many live sessions running (limit %d) — stop one first", s.cfg.MaxConcurrentLive), http.StatusTooManyRequests)
 		return
