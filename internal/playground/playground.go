@@ -379,7 +379,7 @@ func (s *Server) handleJobFile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "job is "+string(status)+", not ready", http.StatusConflict)
 		return
 	}
-	http.ServeFile(w, r, filepath.Join(dir, filepath.Base(r.PathValue("file"))))
+	httpserve.ServeMediaFile(w, r, filepath.Join(dir, filepath.Base(r.PathValue("file"))))
 }
 
 func (s *Server) newJob() (*Job, error) {

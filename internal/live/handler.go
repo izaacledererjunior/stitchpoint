@@ -37,5 +37,5 @@ func (w *Watcher) handleAdSegment(rw http.ResponseWriter, r *http.Request) {
 		http.NotFound(rw, r)
 		return
 	}
-	http.ServeFile(rw, r, path)
+	httpserve.ServeMediaFile(rw, r, path)
 }

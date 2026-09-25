@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -224,6 +225,73 @@ func TestEncodeHLS_MaxDurationTrims(t *testing.T) {
 	if total < 3.5 || total > 4.5 {
 		t.Errorf("TotalDuration() = %v, want ~4s (MaxDuration should have trimmed the ~10s source)", total)
 	}
+}
+
+// TestEncodeHLS_AudioSampleRateMatchesParams is a regression test for a
+// real deployment freeze: without an explicit -ar, FFmpeg carries through
+// whatever sample rate the input creative happens to have, which isn't
+// guaranteed to match the content it gets spliced into. A real live
+// channel (48kHz) spliced against a default-encoded ad creative (44.1kHz,
+// whatever the creative's own source rate was) stalled a real browser
+// player right at the discontinuity, even though the underlying video was
+// otherwise correctly matched (same resolution, same codec) — audio and
+// video share one MediaSource, so a stuck audio decoder wedges playback
+// entirely. Verified via ffprobe against the real encoded output, not
+// just that the flag was passed to FFmpeg.
+func TestEncodeHLS_AudioSampleRateMatchesParams(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not found in PATH")
+	}
+	if _, err := exec.LookPath("ffprobe"); err != nil {
+		t.Skip("ffprobe not found in PATH")
+	}
+
+	input := filepath.Join("..", "..", "testdata", "vod", "ad", "seg_000.ts")
+	if _, err := os.Stat(input); err != nil {
+		t.Skipf("test input not found: %v (see README Test assets)", err)
+	}
+
+	params := Params{
+		Width: 320, Height: 180, VideoBitrateKbps: 200, AudioBitrateKbps: 64,
+		SegmentSeconds: 5, AudioSampleRate: 48000,
+	}
+	segPath := findEncodedSegment(t, input, params)
+
+	cmd := exec.Command("ffprobe", "-v", "error", "-select_streams", "a:0",
+		"-show_entries", "stream=sample_rate", "-of", "csv=p=0", segPath)
+	outBytes, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("ffprobe failed: %v\n%s", err, outBytes)
+	}
+	// ffprobe's csv output can repeat the value across container/stream
+	// sections; only the first non-empty line matters here.
+	var got string
+	for _, line := range strings.Split(string(outBytes), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			got = line
+			break
+		}
+	}
+	if got != "48000" {
+		t.Errorf("encoded audio sample_rate = %q, want %q (params.AudioSampleRate)", got, "48000")
+	}
+}
+
+// findEncodedSegment re-runs EncodeHLS into a fresh dir and returns the
+// first segment's real path — TestEncodeHLS_AudioSampleRateMatchesParams
+// needs an actual file path to hand ffprobe, not just the playlist's own
+// relative URI.
+func findEncodedSegment(t *testing.T, input string, params Params) string {
+	t.Helper()
+	dir := t.TempDir()
+	out, err := EncodeHLS(input, dir, params)
+	if err != nil {
+		t.Fatalf("EncodeHLS() error = %v", err)
+	}
+	if len(out.Segments) == 0 {
+		t.Fatal("EncodeHLS() produced a playlist with no segments")
+	}
+	return filepath.Join(dir, out.Segments[0].URI)
 }
 
 // TestEncodeHLS_LoopInputCoversFullDuration is a regression test for a

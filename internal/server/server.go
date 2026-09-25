@@ -150,7 +150,7 @@ func New(cfg Config) (*Server, error) {
 	s.mux = http.NewServeMux()
 	s.mux.HandleFunc("GET /healthz", httpserve.Healthz)
 	s.mux.Handle("GET /vod/manifest", s.rateLimiter.Middleware(http.HandlerFunc(s.handleStartSession)))
-	s.mux.Handle("GET /content/", http.StripPrefix("/content/", http.FileServer(httpserve.NoDirListing(http.Dir(s.contentDir)))))
+	s.mux.Handle("GET /content/", http.StripPrefix("/content/", httpserve.WithMediaContentType(http.FileServer(httpserve.NoDirListing(http.Dir(s.contentDir))))))
 	s.mux.HandleFunc("GET /sessions/{id}/{file}", s.handleSessionFile)
 
 	go s.runJanitor()
@@ -360,7 +360,7 @@ func (s *Server) handleSessionFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.ServeFile(w, r, filepath.Join(info.dir, filepath.Base(file)))
+	httpserve.ServeMediaFile(w, r, filepath.Join(info.dir, filepath.Base(file)))
 }
 
 // runJanitor periodically removes session directories older than

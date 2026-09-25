@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -152,6 +153,9 @@ func New(cfg Config) (*Watcher, error) {
 
 	w := &Watcher{cfg: cfg, done: make(chan struct{})}
 	w.output.Version = 3
+	// Placeholder until the first real segments arrive and
+	// updateTargetDuration (called at the end of every poll) replaces it
+	// with a value actually derived from the window's own segments.
 	w.output.TargetDuration = 10
 
 	go w.run()
@@ -253,6 +257,30 @@ func (w *Watcher) poll() {
 	}
 
 	w.trimWindow()
+	w.updateTargetDuration()
+}
+
+// updateTargetDuration recomputes #EXT-X-TARGETDURATION from the segments
+// actually in the window, instead of trusting a fixed guess. Per RFC 8216
+// §4.4.3.1, TARGETDURATION must be an integer number of seconds >= every
+// listed segment's own duration — clients (Shaka Player included) also
+// use it to pace how often they reload the live playlist. A fixed 10s
+// guess against this project's own real-channel testing (segments
+// actually ~6s, occasionally shorter around a break boundary) meant every
+// reload interval a live player computed from it was wrong, which is a
+// real, plausible contributor to the stalls seen against a real
+// deployment — not just a cosmetic spec mismatch. Caller must hold w.mu.
+func (w *Watcher) updateTargetDuration() {
+	longest := 0.0
+	for _, s := range w.output.Segments {
+		if s.Duration > longest {
+			longest = s.Duration
+		}
+	}
+	if longest <= 0 {
+		return // empty window (e.g. just joined) — leave the prior value
+	}
+	w.output.TargetDuration = int(math.Ceil(longest))
 }
 
 // processSegment applies one newly-seen upstream segment to the break
@@ -336,13 +364,26 @@ func (w *Watcher) spliceAd() {
 // trimWindow drops segments from the front once the window exceeds
 // WindowSize, advancing MediaSequence to match — the same sliding-window
 // mechanics a real live playlist uses. Caller must hold w.mu.
+//
+// Trims at most one segment per call, even if the window is currently far
+// larger than WindowSize. A real live packager only ever grows its window
+// by the segments it actually produced that tick, so MediaSequence never
+// jumps by more than a handful between two consecutive playlist reloads —
+// players rely on that to tell "the next segment" from "the stream reset
+// out from under me." spliceAd appends a whole ad flight in one shot
+// (potentially more segments than WindowSize on its own, for a break
+// longer than WindowSize*segmentSeconds — confirmed against a real
+// deployment), and trimming all of that excess in the same poll would
+// produce exactly the kind of single-poll MediaSequence cliff a live
+// player can choke on. Letting the window balloon briefly and settle back
+// over the next few polls avoids that; a temporarily-oversized window is
+// just a bigger manifest, not a spec violation.
 func (w *Watcher) trimWindow() {
-	over := len(w.output.Segments) - w.cfg.WindowSize
-	if over <= 0 {
+	if len(w.output.Segments) <= w.cfg.WindowSize {
 		return
 	}
-	w.output.Segments = w.output.Segments[over:]
-	w.output.MediaSequence += over
+	w.output.Segments = w.output.Segments[1:]
+	w.output.MediaSequence++
 }
 
 // resolveAd runs the VAST → download → transcode pipeline for a break in

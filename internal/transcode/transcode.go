@@ -30,6 +30,19 @@ type Params struct {
 	AudioBitrateKbps int
 	SegmentSeconds   float64
 
+	// AudioSampleRate, if positive, forces FFmpeg's audio output to this
+	// rate (Hz) via -ar. Without it, FFmpeg carries through whatever rate
+	// the input creative happens to have, which is not guaranteed to
+	// match the content it's spliced against — confirmed as a real
+	// splice-time failure, not just a theoretical mismatch: a real
+	// deployment spliced a 44.1kHz ad creative into 48kHz live content,
+	// and the sample-rate change right at the discontinuity stalled
+	// playback in a real browser (audio and video share one MediaSource,
+	// so a stuck audio decoder wedges the whole player). Same principle
+	// as Width/Height/VideoBitrateKbps matching the content ladder —
+	// this is the audio-side piece of that.
+	AudioSampleRate int
+
 	// MaxDuration, if positive, caps the encoded output (via FFmpeg's -t),
 	// trimming a longer creative down to fit. Zero means unbounded. On
 	// its own it only trims; see LoopInput for padding an under-length
@@ -59,11 +72,22 @@ type Params struct {
 	StartOffset time.Duration
 }
 
-// DefaultParams mirrors testdata/vod/content's known encode.
+// DefaultParams mirrors testdata/vod/content's known encode, with one
+// deliberate exception: AudioSampleRate is 48000, not testdata/vod's own
+// 44100 — 48kHz is the far more common rate for real broadcast/live
+// sources (confirmed against a real live channel used for internal/live
+// testing), and forcing a consistent, explicit rate here matters more for
+// that real-world case than exactly mirroring the synthetic VOD test
+// asset's own incidental rate. Either choice is still just a fixed
+// constant, not probed from whatever real content -content/-upstream
+// actually is — see README "Future ideas" (dynamic encode-parameter
+// probing), the same deferred-scope situation Width/Height/
+// VideoBitrateKbps are already in.
 var DefaultParams = Params{
 	Width: 640, Height: 360,
 	VideoBitrateKbps: 400,
 	AudioBitrateKbps: 96,
+	AudioSampleRate:  48000,
 	SegmentSeconds:   10,
 }
 
@@ -163,8 +187,11 @@ func EncodeHLS(inputPath, outDir string, params Params) (*manifest.Playlist, err
 	if len(keyframeTimes) > 0 {
 		args = append(args, "-force_key_frames", strings.Join(keyframeTimes, ","))
 	}
+	args = append(args, "-c:a", "aac", "-b:a", fmt.Sprintf("%dk", params.AudioBitrateKbps))
+	if params.AudioSampleRate > 0 {
+		args = append(args, "-ar", fmt.Sprintf("%d", params.AudioSampleRate))
+	}
 	args = append(args,
-		"-c:a", "aac", "-b:a", fmt.Sprintf("%dk", params.AudioBitrateKbps),
 		"-f", "hls",
 		"-hls_time", fmt.Sprintf("%g", segmentSeconds),
 		"-hls_playlist_type", "vod",
@@ -239,6 +266,9 @@ func EncodeDASH(inputPath, outDir string, params Params) (*mpd.MPD, error) {
 		adaptationSets = "id=0,streams=v"
 	} else {
 		args = append(args, "-c:a", "aac", "-b:a", fmt.Sprintf("%dk", params.AudioBitrateKbps))
+		if params.AudioSampleRate > 0 {
+			args = append(args, "-ar", fmt.Sprintf("%d", params.AudioSampleRate))
+		}
 	}
 	args = append(args,
 		"-seg_duration", fmt.Sprintf("%g", segmentSeconds),

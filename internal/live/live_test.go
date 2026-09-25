@@ -11,6 +11,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/izaacledererjunior/stitchpoint/internal/manifest"
+	"github.com/izaacledererjunior/stitchpoint/internal/transcode"
 )
 
 // newTestVASTFixture serves a VAST InLine ad whose MediaFile points at a
@@ -282,6 +285,87 @@ func TestWatcher_SplicesRealAdIntoLiveBreak(t *testing.T) {
 	}
 }
 
+// TestWatcher_TrimWindow_SettlesGraduallyAfterLargeSplice is a regression
+// test for a real deployment freeze: spliceAd appends a whole ad flight
+// in one shot, which for a break longer than
+// WindowSize*segmentSeconds — a real, plausible case, not a pathological
+// one (confirmed against a real deployment) — is more segments than
+// WindowSize on its own. The old trimWindow cut all of that excess in the
+// same poll, producing a single-poll MediaSequence jump larger than 1;
+// live players can treat that as the stream resetting out from under
+// them rather than as its next segment, which looks exactly like the
+// reported freeze. This proves MediaSequence never advances by more than
+// 1 between two consecutive polls, even right after a big splice.
+func TestWatcher_TrimWindow_SettlesGraduallyAfterLargeSplice(t *testing.T) {
+	vastSrv := newTestVASTFixture(t)
+	defer vastSrv.Close()
+
+	u := newUpstreamSim(t)
+	u.setStep(0)
+
+	// A small WindowSize and small SegmentSeconds keep this test fast
+	// while still producing an ad flight (break/segmentSeconds segments)
+	// larger than WindowSize — the exact condition that triggers the bug.
+	w, err := New(Config{
+		UpstreamURL:    u.srv.URL,
+		DefaultVASTURL: vastSrv.URL + "/vast.xml",
+		PollInterval:   50 * time.Millisecond,
+		WorkDir:        t.TempDir(),
+		WindowSize:     2,
+		EncodeParams: transcode.Params{
+			Width: 320, Height: 180, VideoBitrateKbps: 200, AudioBitrateKbps: 64,
+			SegmentSeconds: 2,
+		},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer w.Close()
+
+	time.Sleep(120 * time.Millisecond) // establish initial sequence at seg0..3
+
+	u.setCueOut(4, 6.0) // 6s break / 2s segments = 3 segments, > WindowSize (2)
+	u.setStep(1)
+	time.Sleep(100 * time.Millisecond)
+
+	deadline := time.Now().Add(8 * time.Second)
+	step := 2
+	var prevSeq = -1
+	sawOversizedWindow := false
+	for time.Now().Before(deadline) {
+		out := w.CurrentManifest()
+		if len(out.Segments) > 2 {
+			sawOversizedWindow = true
+		}
+		if prevSeq >= 0 {
+			jump := out.MediaSequence - prevSeq
+			if jump > 1 {
+				t.Fatalf("MediaSequence jumped by %d in one poll (from %d to %d) — want at most 1; a live player can choke on a jump this size", jump, prevSeq, out.MediaSequence)
+			}
+		}
+		prevSeq = out.MediaSequence
+
+		adSpliced := false
+		for _, s := range out.Segments {
+			if strings.Contains(s.URI, "/live/ads/") {
+				adSpliced = true
+			}
+		}
+		if adSpliced && len(out.Segments) <= 2 {
+			// Settled back to WindowSize after the big splice — the
+			// gradual-trim window has closed; nothing more to observe.
+			break
+		}
+		u.setStep(step)
+		step++
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	if !sawOversizedWindow {
+		t.Fatal("window never grew past WindowSize — test didn't actually exercise the large-splice case")
+	}
+}
+
 func TestNew_RequiresUpstreamURL(t *testing.T) {
 	_, err := New(Config{WorkDir: t.TempDir()})
 	if err == nil {
@@ -293,5 +377,37 @@ func TestNew_RejectsInvalidUpstreamURL(t *testing.T) {
 	_, err := New(Config{UpstreamURL: "://not-a-url", WorkDir: t.TempDir()})
 	if err == nil {
 		t.Fatal("New() error = nil, want error for an invalid UpstreamURL")
+	}
+}
+
+// TestUpdateTargetDuration is a regression test for a real deployment
+// stall: a fixed TARGETDURATION (10) against a real channel whose actual
+// segments were shorter (~6s) meant every reload interval a live player
+// computed from it was wrong. RFC 8216 requires TARGETDURATION be an
+// integer >= every listed segment's own duration; this proves it tracks
+// the window's real content instead of a guess.
+func TestUpdateTargetDuration(t *testing.T) {
+	tests := []struct {
+		name       string
+		durations  []float64
+		wantTarget int
+	}{
+		{"typical real-channel segments", []float64{6.006, 6.006, 4.004, 2.002}, 7},
+		{"exact integer duration", []float64{5.0}, 5},
+		{"empty window leaves prior value unchanged", nil, 10},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := &Watcher{}
+			w.output.TargetDuration = 10 // New()'s own placeholder default
+			for _, d := range tt.durations {
+				w.output.Segments = append(w.output.Segments, manifest.Segment{Duration: d})
+			}
+			w.updateTargetDuration()
+			if w.output.TargetDuration != tt.wantTarget {
+				t.Errorf("TargetDuration = %d, want %d", w.output.TargetDuration, tt.wantTarget)
+			}
+		})
 	}
 }

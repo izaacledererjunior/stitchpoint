@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/izaacledererjunior/stitchpoint/internal/httpserve"
 	"github.com/izaacledererjunior/stitchpoint/internal/live"
 	"github.com/izaacledererjunior/stitchpoint/internal/manifest"
 	"github.com/izaacledererjunior/stitchpoint/internal/ssrf"
@@ -190,7 +191,7 @@ func (s *Server) handleLiveAdSegment(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	http.ServeFile(w, r, path)
+	httpserve.ServeMediaFile(w, r, path)
 }
 
 func (s *Server) liveSession(id string) (*LiveSession, bool) {
